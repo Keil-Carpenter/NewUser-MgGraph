@@ -68,6 +68,8 @@ function Run {
 
     } until ($result.Exists)
 
+    $user = $result.User
+
     Write-Host "User found: $($result.User.UserPrincipalName)" -ForegroundColor Green
 
     # Create an array containing the groups to add the user too
