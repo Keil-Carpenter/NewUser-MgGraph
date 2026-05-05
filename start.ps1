@@ -11,49 +11,64 @@
 #>
 
 function Run {
-    Install-Module Microsoft.Graph -RequiredVersion 2.32.0 -Force
-    Import-Module Microsoft.Graph
+    # Install-Module Microsoft.Graph -RequiredVersion 2.32.0 -Force
+    # Import-Module Microsoft.Graph
     
     Connect-MgGraph -Scopes "Group.ReadWrite.All", "User.ReadWrite.All", "Directory.Read.All"
-    function ValidateAADUser {
+
+    # Functon to hondle user object validation
+    function Test-EntraIDUserExists {
+        [CmdletBinding()]
         param (
-            [Parameter(Mandatory = $true)]
-            [string]$UserPrincipalName
+            [Parameter(Mandatory)]
+            [string]$UserPrincipalName,
+            [switch]$ValidateFormat
         )
 
-        # Check that the user exists. This function is called immediatley after the user inputs the UPN
+        # Custom object that returns either a user object or an error
+        $result = [pscustomobject]@{
+            UserPrincipalName = $UserPrincipalName
+            Exists            = $false
+            User              = $null
+            Error             = $null
+        }
+
+        # Validate UPN format using regex
+        if ($ValidateFormat) {
+            $pattern = '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+            if ($UserPrincipalName -notmatch $pattern) {
+                $result.Error = "Invalid UPN format"
+                return $result
+            }
+        }
+
         try {
-            Get-MgUser -UserId $UserPrincipalName -ErrorAction Stop
-            return $true
+            $user = Get-MgUser -UserId $UserPrincipalName -ErrorAction Stop
+
+            $result.Exists = $true
+            $result.User   = $user
         }
         catch {
-            Write-Host "User '$UserPrincipalName' does NOT exist in Azure AD." -ForegroundColor Red
-            return $false
+            # Sets the "Error" property in $results
+            $result.Error = "User not found in Entra ID"
         }
+
+        return $result
     }
 
-    # Use regex to check the format of the UPN in valid
-    $pattern = '^[a-zA-Z0-9._%+,-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    $flag = $null
-    $user
-    $userLocation
-    $teamsNumber
-
-    # Validates the user's input against the regex defined in $pattern
     do {
-        $UserPrincipalName = Read-Host "Enter the user's UPN (Universal Principal Name)"
-        if ($UserPrincipalName -notmatch $pattern) {
-            Write-Host "Invalid format. Try again.`n"
-            continue
+        $userInput = Read-Host "Enter user's UPN"
+
+        $result = Test-EntraIDUserExists -UserPrincipalName $userInput -ValidateFormat
+
+        # If the user does not exist then prompt for re-try
+        if (-not $result.Exists) {
+            Write-Host "$($result.Error). Try again..." -ForegroundColor Yellow
         }
-        try {
-            # Function call which validates the user object exists in Entra
-            $flag = ValidateAADUser $UserPrincipalName
-            $user = Get-MgUser -UserId $UserPrincipalName -ErrorAction Stop
-            Clear-Host
-        }
-        catch { $flag = $null }
-    } until ($flag)
+
+    } until ($result.Exists)
+
+    Write-Host "User found: $($result.User.UserPrincipalName)" -ForegroundColor Green
 
     # Create an array containing the groups to add the user too
     $groupNames = @(
